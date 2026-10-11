@@ -24,6 +24,12 @@ dependencies:
   # Mapa real (flutter_map + tiles de OpenStreetMap)
   flutter_map: ^8.3.1
   latlong2: ^0.10.1
+  geolocator: ^14.1.1
+
+  # Enlaces externos (ubicación en Google Maps y llamada telefónica de la
+  # sucursal). Ya presente en el grafo de dependencias; se declara explícita
+  # para no depender de una dependencia transitiva.
+  url_launcher: ^6.3.2
 
 dev_dependencies:
   test: ^1.31.1

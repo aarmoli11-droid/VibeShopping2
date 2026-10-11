@@ -31,7 +31,7 @@ class StoreMarker extends StatelessWidget {
   }
 }
 
-// Marcador diferenciado de la posición de referencia del usuario.
+// Marcador diferenciado de la posición real del usuario.
 class UserMarker extends StatelessWidget {
   const UserMarker({super.key});
 
@@ -40,7 +40,7 @@ class UserMarker extends StatelessWidget {
     return const _MarkerColumn(
       dot: _MarkerDot(color: _userBlue),
       label: _MarkerLabel(
-        text: 'Tu ubicación',
+        text: 'Tú',
         background: _userBlue,
         textColor: Colors.white,
       ),

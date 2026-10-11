@@ -6,6 +6,7 @@ import '../../features/auth/providers/auth_provider.dart';
 import '../../features/categories/data/repositories/supabase_category_repository.dart';
 import '../../features/categories/providers/category_provider.dart';
 import '../data/supabase/supabase_product_repository.dart';
+import '../location/location_provider.dart';
 import '../../features/products/providers/product_provider.dart';
 import '../../features/explorer/providers/explorer_provider.dart';
 import '../../features/explorer/services/explorer_service.dart';
@@ -58,6 +59,11 @@ class AppProviders {
           create: (_) => ComparisonProvider(
             productProvider: _.read<ProductProvider>(),
           ),
+        ),
+
+        // ——— Location (GPS) ———
+        ChangeNotifierProvider(
+          create: (_) => LocationProvider(),
         ),
 
         // ——— Manual Lists (Hive) ———

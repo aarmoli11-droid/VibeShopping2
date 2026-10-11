@@ -17,12 +17,6 @@ class ExplorerShell extends StatefulWidget {
 class _ExplorerShellState extends State<ExplorerShell> {
   int _navIndex = 0;
 
-  final List<Widget> _pages = const [
-    ManualListsView(),
-    LocationDemoScreen(),
-    ProfileView(),
-  ];
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -30,7 +24,11 @@ class _ExplorerShellState extends State<ExplorerShell> {
         index: _navIndex,
         children: [
           const MarketExplorerView(),
-          ..._pages,
+          const ManualListsView(),
+          // IndexedStack monta todos los tabs; isActive indica cuándo el tab
+          // Ubicación está visible para recién entonces pedir la ubicación.
+          LocationDemoScreen(isActive: _navIndex == 2),
+          const ProfileView(),
         ],
       ),
       bottomNavigationBar: NavigationBar(

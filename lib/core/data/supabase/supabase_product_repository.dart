@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/opening_hours.dart';
 import '../../../features/products/models/product.dart';
 import '../../../features/explorer/domain/store_model.dart';
 import '../../../features/explorer/domain/store_location.dart';
@@ -45,7 +46,8 @@ class SupabaseProductRepository {
   Future<List<StoreModel>> listSupermarkets() async {
     final response = await _supabase
         .from('supermarkets')
-        .select('id,name,logo_url,latitude,longitude,address');
+        .select('id,name,logo_url,latitude,longitude,address,'
+            'branch_name,photo_url,phone,opening_hours');
     return (response as List<dynamic>).map((e) {
       final map = e as Map<String, dynamic>;
       final lat = (map['latitude'] as num?)?.toDouble();
@@ -54,6 +56,10 @@ class SupabaseProductRepository {
         id: map['id']?.toString() ?? '',
         name: map['name'] as String? ?? '',
         logoUrl: map['logo_url'] as String?,
+        branchName: map['branch_name'] as String?,
+        photoUrl: map['photo_url'] as String?,
+        phone: map['phone'] as String?,
+        openingHours: OpeningHours.tryParse(map['opening_hours']),
         locations: (lat != null && lng != null)
             ? [
                 StoreLocation(
