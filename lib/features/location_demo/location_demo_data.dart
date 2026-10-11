@@ -5,8 +5,6 @@
 
 import 'dart:math' as math;
 
-import 'location_demo_store.dart';
-
 abstract final class LocationDemoData {
   // Tiles de OpenStreetMap (sin API key).
   static const String tileUrlTemplate =
@@ -15,8 +13,9 @@ abstract final class LocationDemoData {
   // User-Agent de las peticiones de tiles (buena práctica de OSM).
   static const String userAgentPackageName = 'com.example.vibeshopping';
 
-  // Atribución requerida por la política de OSM.
-  static const String attribution = 'VibeShopping';
+  // Atribución requerida por la política de OSM. El widget la muestra como
+  // 'flutter_map | © OpenStreetMap contributors'.
+  static const String attribution = 'OpenStreetMap contributors';
 
   // Posición de referencia del usuario (centro de San Isidro).
   // En una versión real esto se reemplaza por la ubicación del GPS.
@@ -51,8 +50,4 @@ abstract final class LocationDemoData {
 
     return 2 * _earthRadiusKm * math.asin(math.sqrt(a));
   }
-
-  // Distancia del usuario a una tienda (kilómetros).
-  static double distanceTo(DemoStore store) =>
-      haversineKm(userLatitude, userLongitude, store.latitude, store.longitude);
 }

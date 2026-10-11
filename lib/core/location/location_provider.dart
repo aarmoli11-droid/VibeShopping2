@@ -1,7 +1,6 @@
 // Fuente única de la ubicación del usuario (GPS).
-// Independiente del mapa y del asistente: solo expone el estado del permiso,
-// la posición actual y los errores. Las features lo consumen vía Provider.
-// Fase 1: no integra el GPS en el mapa ni modifica el asistente.
+// Independiente del mapa y del asistente: solo expone el estado del permiso y
+// la posición actual. Las features lo consumen vía Provider.
 
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
@@ -19,13 +18,8 @@ enum LocationStatus {
 class LocationProvider extends ChangeNotifier {
   LocationStatus _status = LocationStatus.initial;
   Position? _position;
-  String? _errorMessage;
-  bool _isLoading = false;
 
   LocationStatus get status => _status;
-  Position? get position => _position;
-  String? get errorMessage => _errorMessage;
-  bool get isLoading => _isLoading;
   bool get hasPosition => _position != null;
   bool get isGranted => _status == LocationStatus.granted;
 
@@ -50,7 +44,6 @@ class LocationProvider extends ChangeNotifier {
       if (!granted) return null;
     }
 
-    _setLoading(true);
     try {
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
@@ -59,14 +52,12 @@ class LocationProvider extends ChangeNotifier {
       );
       _position = position;
       _status = LocationStatus.granted;
-      _errorMessage = null;
       notifyListeners();
       return position;
     } catch (_) {
-      _apply(LocationStatus.error, 'No se pudo obtener la ubicación actual.');
+      _status = LocationStatus.error;
+      notifyListeners();
       return null;
-    } finally {
-      _setLoading(false);
     }
   }
 
@@ -75,12 +66,11 @@ class LocationProvider extends ChangeNotifier {
 
   // Comprueba servicios + permiso, pidiéndolo solo si askIfNeeded.
   Future<bool> _resolvePermission({required bool askIfNeeded}) async {
-    _setLoading(true);
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        _apply(LocationStatus.serviceDisabled,
-            'Los servicios de ubicación están desactivados.');
+        _status = LocationStatus.serviceDisabled;
+        notifyListeners();
         return false;
       }
 
@@ -90,41 +80,30 @@ class LocationProvider extends ChangeNotifier {
       }
 
       if (permission == LocationPermission.denied) {
-        _apply(LocationStatus.permissionDenied,
-            'Permiso de ubicación denegado.');
+        _status = LocationStatus.permissionDenied;
+        notifyListeners();
         return false;
       }
       if (permission == LocationPermission.deniedForever) {
-        _apply(LocationStatus.permissionDeniedForever,
-            'Permiso de ubicación denegado permanentemente. Actívalo en Ajustes.');
+        _status = LocationStatus.permissionDeniedForever;
+        notifyListeners();
         return false;
       }
       if (permission == LocationPermission.whileInUse ||
           permission == LocationPermission.always) {
-        _apply(LocationStatus.granted, null);
+        _status = LocationStatus.granted;
+        notifyListeners();
         return true;
       }
 
       // unableToDetermine u otro estado inesperado.
-      _apply(LocationStatus.error, 'No se pudo determinar el permiso de ubicación.');
+      _status = LocationStatus.error;
+      notifyListeners();
       return false;
     } catch (_) {
-      _apply(LocationStatus.error,
-          'No se pudo verificar el permiso de ubicación.');
+      _status = LocationStatus.error;
+      notifyListeners();
       return false;
-    } finally {
-      _setLoading(false);
     }
-  }
-
-  void _apply(LocationStatus status, String? error) {
-    _status = status;
-    _errorMessage = error;
-    notifyListeners();
-  }
-
-  void _setLoading(bool value) {
-    _isLoading = value;
-    notifyListeners();
   }
 }

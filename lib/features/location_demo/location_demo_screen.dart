@@ -97,7 +97,8 @@ class _LocationDemoScreenState extends State<LocationDemoScreen>
         _stores = LocationDemoLogic.demoStoresFromModels(supermarkets);
         _loading = false;
       });
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('VibeShopping: fallo al cargar supermercados del mapa: $e\n$st');
       if (!mounted) return;
       setState(() {
         _stores = const [];
@@ -205,6 +206,7 @@ class _LocationDemoScreenState extends State<LocationDemoScreen>
       locationStatus: location.status,
       hasPosition: hasPosition,
       visibleStoreCount: visibleStores.length,
+      totalStoreCount: _stores.length,
     );
 
     return Scaffold(
@@ -294,6 +296,7 @@ class _LocationDemoScreenState extends State<LocationDemoScreen>
           onAction: _refreshOnResume,
         );
       case MapContentState.noNearby:
+      case MapContentState.noStores:
       case MapContentState.ready:
         return _buildMap(location, visibleStores);
     }
@@ -380,7 +383,9 @@ class _LocationDemoScreenState extends State<LocationDemoScreen>
 
   // Barra inferior: radio en uso, resultado o ampliación de búsqueda.
   Widget _buildStatusBar(List<DemoStore> visibleStores, MapContentState state) {
-    if (state != MapContentState.ready && state != MapContentState.noNearby) {
+    if (state != MapContentState.ready &&
+        state != MapContentState.noNearby &&
+        state != MapContentState.noStores) {
       return const SizedBox(height: 16);
     }
 
@@ -390,6 +395,13 @@ class _LocationDemoScreenState extends State<LocationDemoScreen>
       body = Text(
         '${visibleStores.length} supermercado(s) en un radio de $radiusLabel km.\n'
         'Selecciona una tienda para ver su distancia y tiempo de viaje.',
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 13, color: Colors.grey),
+      );
+    } else if (state == MapContentState.noStores) {
+      // Sin tiendas cargadas desde Supabase: ampliar el radio no ayuda.
+      body = Text(
+        'No se cargaron supermercados desde Supabase.',
         textAlign: TextAlign.center,
         style: const TextStyle(fontSize: 13, color: Colors.grey),
       );

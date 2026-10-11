@@ -4,9 +4,9 @@ Flutter + Supabase directo. **No hay backend Node.js** (eliminado en el cambio d
 
 ## Estado del alcance
 
-- **Dart**: 79 archivos, ~7,993 líneas totales (~7,834 código) — dentro del objetivo académico 6,000–8,000.
-- **Backend / SQL**: 0 (el backend Node.ts y las migraciones `server/` fueron eliminados; los datos siguen en Supabase).
-- **Dependencias pubspec**: `supabase_flutter`, `provider`, `hive`, `hive_flutter`, `cached_network_image`, `flutter_map`, `latlong2`, `test`.
+- **Dart**: 84 archivos lib + 4 de test, ~9,601 líneas físicas (código real ~8,530: lib 7,966 + test 564). El código de `lib/` (7,966) sigue dentro del objetivo académico 6,000–8,000; con tests supera el límite por el crecimiento de Fase 2/3 (GPS real + sucursales).
+- **Backend / SQL**: 0 (el backend Node.ts y las migraciones `server/` fueron eliminados; los datos siguen en Supabase). Hay 2 scripts SQL manuales en `supabase/manual_sql/` para la tabla `supermarkets` (setup, no backend).
+- **Dependencias pubspec**: `supabase_flutter`, `provider`, `hive`, `hive_flutter`, `cached_network_image`, `flutter_map`, `latlong2`, `geolocator` (GPS del mapa), `url_launcher` (enlaces externos), `test`.
 
 ## Prerequisites
 - Flutter 3.22+ (usa `--dart-define-from-file`)
@@ -50,14 +50,14 @@ Cada variable tiene exactamente **un punto de lectura** en el código.
 
 | Feature | Estado | Líneas |
 |---|---|---|
-| `explorer/` | Conservada — pantalla principal, búsqueda y filtros | 1,220 |
+| `explorer/` | Conservada — pantalla principal, búsqueda y filtros | 1,246 |
 | `products/` | Conservada — productos, precios y detalle | 634 |
 | `comparison/` | Conservada — comparación de precios entre tiendas | 466 |
-| `auth/` | Conservada — login/registro/perfil | 1,029 |
+| `auth/` | Conservada — login/registro/perfil | 1,057 |
 | `categories/` | Conservada — filtro por categorías | 168 |
-| `manual_lists/` | **Congelada** — funciona, NO modificar | 2,703 |
-| `location_demo/` | NUEVA — mapa real de San Isidro con flutter_map | 750 |
-| `shopping_assistant/` | NUEVA — recomendación precio+distancia+transporte | 520 |
+| `manual_lists/` | **Congelada** — funciona, NO modificar | 2,745 |
+| `location_demo/` | NUEVA — mapa real (GPS) + sucursales con detalle | 1,404 |
+| `shopping_assistant/` | NUEVA — recomendación precio+distancia+transporte | 510 |
 
 **Regla**: no invertir tiempo en `manual_lists` (congelado). No migrar, no conectar al asistente, no simplificar.
 
@@ -103,23 +103,23 @@ Pesos por transporte: carro 0.6/0.4, bus 0.5/0.5, bici 0.4/0.6, a pie 0.3/0.7. L
 
 ## Flujo de la Ubicación Demo (`location_demo/`)
 
-Mapa real de San Isidro de El General con `flutter_map` (tiles de OpenStreetMap, sin API key) y 3 supermercados con coordenadas reales de OSM: BM Bostón (El Prado), CoopeAgri San Luis (Barrio San Luis) y Maxi Palí (Barrio Sinaí). La posición del usuario es una referencia fija del centro de San Isidro (9.3760, -83.7025), etiquetada "Tu ubicación". Cada tienda es un marcador con su nombre sobre el mapa; pan y zoom con gestos + botones `+`/`−`. Al tocar un marcador (o la tarjeta) se abre un BottomSheet con dirección, distancia Haversine y tiempos auto (40 km/h), moto (35), bici (15) y a pie (5), marcados como estimaciones de referencia del prototipo. Sin GPS, sin rutas, sin OSRM.
+Mapa real de San Isidro de El General con `flutter_map` (tiles de OpenStreetMap, sin API key) y supermercados reales leídos de Supabase (`supermarkets` → `LocationDemoRepository.listSupermarkets` + `LocationDemoLogic.demoStoresFromModels`, que descarta filas sin coordenadas o con `department`/`home`). La posición del usuario es **GPS real** (`LocationProvider` + `geolocator`) con diálogo de justificación y estados diferenciados (servicio desactivado, permiso denegado/bloqueado, error); la referencia fija del centro de San Isidro (9.3760, -83.7025) queda como centro por defecto del mapa y como posición del asistente (aún ficticia). Marcadores: punto con nombre por tienda + "Tú". Pan y zoom con gestos + botones `+`/`−`. Al tocar un marcador se abre `StoreDetailsScreen` con foto, dirección, teléfono, horarios por día (`OpeningHours`) y distancias/tiempos por transporte (Haversine + VibeTransport: auto 40, moto 35, bici 15, a pie 5 km/h) + enlaces a Google Maps y llamada. Filtro de radio ampliable 5 → 10 → 15 km y estados `ready` / `noNearby` / `noStores` (este último: "No se cargaron supermercados desde Supabase."). Sin rutas, sin OSRM.
 
 ## Reporte: Mapa real de Ubicación (flutter_map + OpenStreetMap)
 
 - **Flutter**: 3.41.1 stable · **Dart**: 3.11.0 stable (2026-02).
 - **Paquete de mapa**: `flutter_map ^8.3.1` + `latlong2 ^0.10.1` (requiere Dart ≥3.6 — cumplido). Reemplaza a `maplibre_gl ^0.26.2`. Sin cambio de SDK.
-- **Proveedor de tiles**: OpenStreetMap. **URL**: `https://tile.openstreetmap.org/{z}/{x}/{y}.png`. **API key**: no requiere. **User-Agent**: `com.example.vibeshopping` (`TileLayer.userAgentPackageName`). Atribución visible en el mapa ("© OpenStreetMap contributors").
-- **Android**: compatible (permiso INTERNET ya declarado en el manifest). iOS: requiere configuración adicional (no aplica).
-- **Supermercados** (coordenadas reales vía Nominatim/OSM):
+- **GPS**: `geolocator ^14.1.1` vía `LocationProvider` (`lib/core/location/`) con justificación previa y estados diferenciados; permisos Android `ACCESS_FINE/COARSE_LOCATION` (iOS requiere configuración adicional, no aplica). Enlaces externos con `url_launcher`.
+- **Proveedor de tiles**: OpenStreetMap. **URL**: `https://tile.openstreetmap.org/{z}/{x}/{y}.png`. **API key**: no requiere. **User-Agent**: `com.example.vibeshopping` (`TileLayer.userAgentPackageName`). Atribución visible: "flutter_map | © OpenStreetMap contributors".
+- **Supermercados** (reales, desde `public.supermarkets`; coordenadas localizadas vía Nominatim/OSM):
   - BM Bostón: 9.3808282, -83.7061450 (Alameda Venegas, El Prado)
   - CoopeAgri San Luis: 9.3857375, -83.7065238 (Calle 14, Barrio San Luis)
   - Maxi Palí: 9.3675409, -83.6964465 (Vía 242, Barrio Sinaí)
-- **Usuario (referencia)**: 9.3760, -83.7025 — Carretera Interamericana Sur, El Prado, San Isidro.
+- **Usuario**: GPS real (`LocationProvider`). La referencia fija 9.3760, -83.7025 (Carretera Interamericana Sur, El Prado, San Isidro) queda como centro por defecto del mapa y como posición del asistente (aún ficticia).
 - **Distancias/tiempos** (Haversine + velocidades): BM 0.67 km → 1/1/3/8 min; CoopeAgri SL 1.17 km → 2/2/5/14; Maxi Palí 1.15 km → 2/2/5/14 (auto/moto/bici/a pie). Tiempos coherentes por medio (auto ≤ moto ≤ bici ≤ a pie).
-- **Interacción**: pan y zoom con gestos (sin rotación) + botones `+`/`−` en la esquina superior derecha del mapa. Tap en un marcador o en una tarjeta abre un `showModalBottomSheet` con los datos del supermercado (nombre, dirección, distancia, tiempos por medio, nota de estimación y botón Cerrar).
-- **Archivos**: los 6 de `location_demo/`; `explorer_shell.dart` sin cambios.
-- **Total del proyecto**: 79 archivos lib, 7,993 líneas; código real ~7,993 (lib 7,834 + test 159) — dentro de 6,000–8,000.
+- **Interacción**: pan y zoom con gestos (sin rotación) + botones `+`/`−`. Tap en un marcador abre `StoreDetailsScreen` (foto, dirección, teléfono, horarios por día, distancias/tiempos por transporte, enlaces a Google Maps y llamada). Filtro de radio 5 → 10 → 15 km y estados `ready` / `noNearby` / `noStores`.
+- **Archivos**: los 6 de `location_demo/` + `core/location/location_provider.dart`, `core/opening_hours.dart`, `core/external_links.dart`; `explorer_shell.dart` con el tab (ahora con `isActive`).
+- **Total del proyecto**: 84 archivos lib (8,923 líneas físicas; código 7,966) + 4 archivos test (678 líneas; código 564). Código real ~8,530: `lib/` dentro de 6,000–8,000; con tests supera el límite por el crecimiento de Fase 2/3.
 
 ## Estructura de directorios
 
@@ -134,17 +134,17 @@ lib/features/<name>/
 
 ```
 lib/features/location_demo/
-  location_demo_screen.dart        (178 — pantalla con mapa flutter_map)
-  location_demo_data.dart          (87 — tiles OSM + coordenadas + Haversine + tiempos)
-  location_demo_store.dart         (15 — modelo DemoStore)
-  location_demo_widgets.dart       (142 — tarjeta StoreCard)
-  location_demo_details_sheet.dart (181 — BottomSheet de detalle)
-  location_demo_map_widgets.dart   (147 — marcadores + botones de zoom)
+  location_demo_screen.dart          (492 — pantalla con mapa flutter_map + GPS/radio)
+  location_demo_data.dart            (53 — tiles OSM + Haversine + referencia 9.3760, -83.7025)
+  location_demo_store.dart           (39 — modelo DemoStore + displayTitle)
+  location_demo_logic.dart           (175 — mapeo Supabase→demo, estados y radio; lógica pura)
+  location_demo_map_widgets.dart     (185 — marcadores StoreMarker/UserMarker + zoom)
+  location_demo_store_details_screen.dart (460 — pantalla de detalle de la sucursal)
 
 lib/features/shopping_assistant/
-  shopping_assistant_screen.dart  (~250)
-  shopping_assistant_logic.dart   (~160)  — lógica pura, sin UI
-  shopping_assistant_data.dart    (~50)   — posición + distancias
+  shopping_assistant_screen.dart  (~150)
+  shopping_assistant_logic.dart   (~240)  — lógica pura, sin UI
+  shopping_assistant_data.dart    (~20)   — posición + distancias
 ```
 
 No crear repository/datasource/DTO/mapper/useCase/provider si no hace falta.
@@ -157,6 +157,8 @@ No crear repository/datasource/DTO/mapper/useCase/provider si no hace falta.
 - Products → Comparison: `comparison_provider.dart`
 - ManualLists → Products: `product_provider.dart`
 - ShoppingAssistant → Products, Explorer, LocationDemo (Haversine)
+- LocationDemo → Explorer: `store_model.dart` (StoreModel en `demoStoresFromModels`)
+- LocationDemo → Core: `location_provider.dart`, `opening_hours.dart`, `external_links.dart`
 
 ### Single source of truth
 - `lib/core/vibe_constants.dart` (VibeColors) — navy `#2C3E50`, mint `#A8D5BA`, backgroundMint, backgroundWhite
@@ -166,7 +168,7 @@ No crear repository/datasource/DTO/mapper/useCase/provider si no hace falta.
 - `lib/features/products/models/product.dart` — ProductEntity/ProductPrice
 
 ### Inyección de dependencias
-- Providers registrados centralmente en `lib/core/di/app_providers.dart` (solo Auth, Products, Categories, Explorer, Comparison, ManualList)
+- Providers registrados centralmente en `lib/core/di/app_providers.dart` (solo Auth, Products, Categories, Explorer, Comparison, ManualList, Location)
 - `main.dart` solo inicializa Supabase + Hive y delega el DI a `AppProviders`
 - Sin Service Locator, sin GetIt, sin reflexión
 
@@ -174,28 +176,28 @@ No crear repository/datasource/DTO/mapper/useCase/provider si no hace falta.
 
 | Módulo | Líneas |
 |---|---|
-| manual_lists (congelado) | 2,703 |
-| auth | 1,029 |
-| explorer | 1,220 |
+| manual_lists (congelado) | 2,745 |
+| auth | 1,057 |
+| explorer | 1,246 |
 | products | 634 |
-| shopping_assistant (nuevo) | 520 |
+| shopping_assistant (nuevo) | 510 |
 | comparison | 466 |
-| location_demo (nuevo) | 750 |
-| core | 310 |
+| location_demo (nuevo) | 1,404 |
+| core | 659 |
 | categories | 168 |
 | main | 34 |
-| **Total** | **~7,993** |
+| **Total** | **~8,923** |
 
-Código real: ~7,834 en lib + 159 en test = ~7,993, dentro del rango 6,000–8,000. En la fase de limpieza se eliminaron capas de arquitectura innecesarias (interfaces `*Repository`, services passthrough `*Service`), código muerto y ~875 líneas de comentarios de bloque, y se retiró `font_awesome_flutter` (botones Google muertos).
+Código real: ~7,966 en lib + 564 en test = ~8,530 (lib dentro de 6,000–8,000; con tests supera el límite por Fase 2/3). En la fase de limpieza se eliminaron capas de arquitectura innecesarias (interfaces `*Repository`, services passthrough `*Service`), código muerto y ~875 líneas de comentarios de bloque, y se retiró `font_awesome_flutter` (botones Google muertos).
 
 ## Verificación
 
 ```bash
 flutter analyze lib/
-flutter test test/features/shopping_assistant/
+flutter test
 ```
 
-Sin `npx tsc` ni `pnpm test` (el backend fue eliminado). Los tests del asistente usan `package:test` (lógica pura, sin widgets).
+Sin `npx tsc` ni `pnpm test` (el backend fue eliminado). Los tests usan `package:test` (lógica pura, sin widgets): `shopping_assistant/`, `location_demo/` y `opening_hours`.
 
 ## Código eliminado (referencia)
 
@@ -215,6 +217,13 @@ Antes de borrar cualquier elemento:
 5. Documentar en el reporte qué se borró, qué lo reemplaza y cómo se verificó la seguridad.
 
 ## Historial de progreso
+
+### Fase 2/3 del mapa: GPS real + sucursales con detalles (2026-10)
+- **Creado**: GPS real con `geolocator ^14.1.1` (`LocationProvider` en `lib/core/location/`, diálogo de justificación y estados: servicio desactivado / permiso denegado / bloqueado / error; permisos Android `ACCESS_FINE/COARSE_LOCATION`; iOS requiere configuración adicional). Sucursales reales desde `public.supermarkets` (`LocationDemoRepository.listSupermarkets` + `LocationDemoLogic.demoStoresFromModels`, descartando filas sin coordenadas o `department`/`home`). `StoreDetailsScreen` (foto, dirección, teléfono, horarios `OpeningHours`, distancias/tiempos por transporte con VibeTransport, enlaces Google Maps + llamada con `url_launcher`). Filtro de radio 5 → 10 → 15 km y estados `ready` / `noNearby` / `noStores`.
+- **SQL adicional (manual, idempotente)**: `supabase/manual_sql/20261010_phase3_extend_supermarkets.sql` (foto/dirección/teléfono/horarios) y `20261011_authenticated_select_supermarkets.sql` (RLS `select` autenticado para `supermarkets`).
+- **Limpieza aplicada**: atribución OSM configurada para renderizar "flutter_map | © OpenStreetMap contributors"; eliminados los legacy `location_demo_stores.dart` (12 tiendas ficticias) y `location_demo_details_sheet.dart` (BottomSheet) — reemplazados por datos reales de Supabase y `StoreDetailsScreen`; eliminados getters muertos de `LocationProvider` y `LocationDemoData.distanceTo`; estado `noStores` + `debugPrint` del error de carga.
+- **Verificación**: `flutter analyze`: 0 issues. `flutter test`: 44/44. Commits locales: `c615830` (feature) + el commit de limpieza.
+- **Métricas**: 79 → 84 archivos lib (código 7,834 → 7,966); test 2 → 4 archivos (564 código); feature `location_demo` 750 → 1,404 líneas. Código real total ~8,530 (lib 7,966 + tests 564); `lib/` sigue dentro del objetivo académico.
 
 ### Migración del mapa a flutter_map 2026-08 (flutter_map + OpenStreetMap)
 - **Reemplazado**: el mapa de `maplibre_gl ^0.26.2` (tiles de OpenFreeMap) por `flutter_map ^8.3.1` + `latlong2 ^0.10.1` con tiles de OpenStreetMap (`https://tile.openstreetmap.org/{z}/{x}/{y}.png`, sin API key). User-Agent `com.example.vibeshopping` y atribución visible.

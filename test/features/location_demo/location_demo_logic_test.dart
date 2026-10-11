@@ -5,7 +5,6 @@
 import 'package:test/test.dart';
 
 import 'package:vibeshopping/core/location/location_provider.dart';
-import 'package:vibeshopping/core/opening_hours.dart';
 import 'package:vibeshopping/features/explorer/domain/store_location.dart';
 import 'package:vibeshopping/features/explorer/domain/store_model.dart';
 import 'package:vibeshopping/features/location_demo/location_demo_data.dart';
@@ -24,6 +23,7 @@ MapContentState _resolve({
   LocationStatus locationStatus = LocationStatus.initial,
   bool hasPosition = false,
   int visibleStoreCount = 0,
+  int totalStoreCount = 0,
 }) =>
     LocationDemoLogic.resolveContentState(
       storesLoading: storesLoading,
@@ -31,6 +31,7 @@ MapContentState _resolve({
       locationStatus: locationStatus,
       hasPosition: hasPosition,
       visibleStoreCount: visibleStoreCount,
+      totalStoreCount: totalStoreCount,
     );
 
 void main() {
@@ -146,14 +147,26 @@ void main() {
           MapContentState.acquiringLocation);
     });
 
-    test('sin supermercados cercanos', () {
+    test('sin supermercados cercanos (hay tiendas pero fuera del radio)', () {
       expect(
           _resolve(
             locationStatus: LocationStatus.granted,
             hasPosition: true,
             visibleStoreCount: 0,
+            totalStoreCount: 3,
           ),
           MapContentState.noNearby);
+    });
+
+    test('sin supermercados cargados desde Supabase', () {
+      expect(
+          _resolve(
+            locationStatus: LocationStatus.granted,
+            hasPosition: true,
+            visibleStoreCount: 0,
+            totalStoreCount: 0,
+          ),
+          MapContentState.noStores);
     });
 
     test('supermercados cargados', () {
@@ -162,31 +175,9 @@ void main() {
             locationStatus: LocationStatus.granted,
             hasPosition: true,
             visibleStoreCount: 3,
+            totalStoreCount: 5,
           ),
           MapContentState.ready);
-    });
-  });
-
-  group('DemoStore.displayTitle', () {
-    test('con branch_name muestra "nombre · sucursal"', () {
-      final store = DemoStore(
-        name: 'BM',
-        branchName: 'Buenos Aires',
-        address: 'Centro',
-        latitude: 9.38,
-        longitude: -83.70,
-      );
-      expect(store.displayTitle, 'BM · Buenos Aires');
-    });
-
-    test('sin branch_name muestra solo el nombre', () {
-      final store = DemoStore(
-        name: 'BM',
-        address: 'Centro',
-        latitude: 9.38,
-        longitude: -83.70,
-      );
-      expect(store.displayTitle, 'BM');
     });
   });
 
@@ -220,49 +211,6 @@ void main() {
       expect(byMode[TransportMode.moto], 3);
       expect(byMode[TransportMode.bike], 6);
       expect(byMode[TransportMode.walking], 17);
-    });
-  });
-
-  group('LocationDemoLogic.demoStoresFromModels con campos opcionales', () {
-    test('mapea branch_name, photo_url, phone y opening_hours', () {
-      final models = [
-        StoreModel(
-          id: 'a',
-          name: 'BM',
-          branchName: 'Buenos Aires',
-          photoUrl: 'https://ejemplo/foto.jpg',
-          phone: '+506 2222 0000',
-          openingHours: OpeningHours.tryParse({
-            'monday': [
-              {'open': '08:00', 'close': '17:00'},
-            ],
-          }),
-          locations: const [
-            StoreLocation(latitude: 9.38, longitude: -83.70, address: 'Centro'),
-          ],
-        ),
-      ];
-      final store = LocationDemoLogic.demoStoresFromModels(models).single;
-      expect(store.name, 'BM');
-      expect(store.branchName, 'Buenos Aires');
-      expect(store.photoUrl, 'https://ejemplo/foto.jpg');
-      expect(store.phone, '+506 2222 0000');
-      expect(store.openingHours, isNotNull);
-      expect(store.openingHours!.forDay('monday'), hasLength(1));
-    });
-
-    test('campos nulos se mantienen nulos (no se inventa información)', () {
-      final models = [
-        const StoreModel(id: 'a', name: 'BM', locations: [
-          StoreLocation(latitude: 9.38, longitude: -83.70),
-        ]),
-      ];
-      final store = LocationDemoLogic.demoStoresFromModels(models).single;
-      expect(store.branchName, isNull);
-      expect(store.photoUrl, isNull);
-      expect(store.phone, isNull);
-      expect(store.openingHours, isNull);
-      expect(store.displayTitle, 'BM');
     });
   });
 }

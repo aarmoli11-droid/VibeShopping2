@@ -17,7 +17,8 @@ enum MapContentState {
   permissionDenied, // Permiso denegado (se puede volver a pedir).
   permissionDeniedForever, // Denegado permanentemente (solo Ajustes).
   locationError, // Error al obtener la ubicación.
-  noNearby, // Ubicación disponible pero sin supermercados en el radio.
+  noNearby, // Hay tiendas pero ninguna está dentro del radio.
+  noStores, // No se cargó ninguna tienda desde Supabase.
   ready, // Supermercados cargados correctamente.
 }
 
@@ -116,12 +117,15 @@ abstract final class LocationDemoLogic {
   }
 
   // Determina qué estado mostrar a partir del estado de datos y de ubicación.
+  // totalStoreCount distingue "no hay tiendas en el radio" (noNearby) de
+  // "Supabase no devolvió tiendas" (noStores), que no se puede ampliar.
   static MapContentState resolveContentState({
     required bool storesLoading,
     required bool storesError,
     required LocationStatus locationStatus,
     required bool hasPosition,
     required int visibleStoreCount,
+    required int totalStoreCount,
   }) {
     if (storesLoading) return MapContentState.loadingStores;
     if (storesError) return MapContentState.storesError;
@@ -130,9 +134,10 @@ abstract final class LocationDemoLogic {
       case LocationStatus.initial:
       case LocationStatus.granted:
         if (!hasPosition) return MapContentState.acquiringLocation;
-        return visibleStoreCount > 0
-            ? MapContentState.ready
-            : MapContentState.noNearby;
+        if (visibleStoreCount > 0) return MapContentState.ready;
+        return totalStoreCount > 0
+            ? MapContentState.noNearby
+            : MapContentState.noStores;
       case LocationStatus.serviceDisabled:
         return MapContentState.serviceDisabled;
       case LocationStatus.permissionDenied:
