@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../core/vibe_constants.dart';
 import '../providers/auth_provider.dart';
-import 'login_view.dart';
 
 class ProfileView extends StatelessWidget {
   const ProfileView({super.key});
@@ -71,12 +70,7 @@ class ProfileView extends StatelessWidget {
                   child: OutlinedButton.icon(
                     onPressed: () async {
                       await context.read<AuthProvider>().signOut();
-                      if (context.mounted) {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(builder: (_) => const LoginView()),
-                        );
-                      }
+                      // AuthGate resuelve la navegación al login automáticamente.
                     },
                     icon: const Icon(Icons.logout_rounded, color: Colors.red),
                     label: const Text('Cerrar Sesión',

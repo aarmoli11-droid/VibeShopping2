@@ -130,32 +130,7 @@ class _LoginViewState extends State<LoginView> {
                   const SizedBox(height: 18),
                   if (auth.error != null) ...[
                     const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFCE4EC),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(Icons.error_outline,
-                              size: 20, color: Color(0xFFC62828)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              auth.error!,
-                              style: const TextStyle(
-                                color: Color(0xFFC62828),
-                                fontSize: 13.5,
-                                height: 1.3,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    AuthErrorBanner(message: auth.error!),
                   ],
                   const SizedBox(height: 18),
                   FilledButton(

@@ -12,6 +12,8 @@ import '../../features/explorer/providers/explorer_provider.dart';
 import '../../features/explorer/services/explorer_service.dart';
 import '../../features/manual_lists/providers/manual_list_provider.dart';
 import '../../features/comparison/providers/comparison_provider.dart';
+import '../../features/shopping_assistant/shopping_assistant_service.dart';
+import '../../features/shopping_assistant/shopping_assistant_provider.dart';
 
 class AppProviders {
   static List<dynamic> get providers => [
@@ -54,6 +56,11 @@ class AppProviders {
           ),
         ),
 
+        // ——— Location (GPS) ———
+        ChangeNotifierProvider(
+          create: (_) => LocationProvider(),
+        ),
+
         // ——— Comparison ———
         ChangeNotifierProvider(
           create: (_) => ComparisonProvider(
@@ -61,15 +68,22 @@ class AppProviders {
           ),
         ),
 
-        // ——— Location (GPS) ———
-        ChangeNotifierProvider(
-          create: (_) => LocationProvider(),
-        ),
-
         // ——— Manual Lists (Hive) ———
         ChangeNotifierProvider(
           create: (_) => ManualListProvider(
             productProvider: _.read<ProductProvider>(),
+          ),
+        ),
+
+        // ——— Shopping Assistant ———
+        Provider(
+          create: (_) => ShoppingAssistantService(
+            supabase: Supabase.instance.client,
+          ),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => ShoppingAssistantProvider(
+            service: _.read<ShoppingAssistantService>(),
           ),
         ),
       ];

@@ -1008,3 +1008,162 @@ reintentó y pasó. No es un defecto del código, es la política del proveedor.
 
 Sin tablas nuevas, sin Firebase, sin dependencias nuevas. No se modificaron `manual_lists`, Ubicación ni
 otras features.
+
+---
+
+## Entrada 12 — Modelo deprecado corregido, reintentos 5xx y mensaje amigable para 503 (2026-10)
+
+### Síntoma reportado
+El asistente respondía error. El usuario sospechaba API vencida o modelo inexistente.
+
+### Diagnóstico (verificado en vivo, sin tocar código)
+| Verificación | Resultado |
+|---|---|
+| Secret `GEMINI_API_KEY` en Supabase | Presente y activo (2026-08-12) — la key **no** está vencida |
+| Saludo "hola" | 200 OK en algunas llamadas → la key funciona |
+| Muestreo de llamadas con producto | ~25 % de éxito; el resto **503** "This model is currently experiencing high demand" |
+| Error real tras deprecación | **HTTP 404** `This model models/gemini-2.0-flash is no longer available. Please update your code to use models/gemini-3.8-flash` |
+| Conclusión | **El modelo `gemini-2.0-flash` fue deprecado por Google** → 404. Además, cuando sí respondía, `gemini-3.5-flash` estaba en sobrecarga (503). El error técnico en inglés viajaba crudo hasta Flutter, que lo mostraba como si la API estuviera vencida |
+
+### Qué se hizo (causa raíz + robustez)
+1. **Modelo actualizado** en `supabase/functions/gemini-chat/index.ts`:
+   `MODEL = "gemini-2.0-flash"` → **`gemini-3.8-flash`** (el nombre que Google indica explícitamente en el 404).
+2. **Reintentos para errores transitorios de servidor**: nueva función `callGemini(apiKey, contents)` que
+   reintenta hasta 3 veces (esperas 0 / 1.5 s / 3 s) cuando Gemini devuelve HTTP **500, 502, 503 o 504**.
+   HTTP **429 no se reintenta** (se devuelve tal cual para el mensaje de límite temporal ya existente).
+3. **Mensaje amigable para sobrecarga en Flutter**: tras agotar los reintentos, la EF devuelve
+   **HTTP 503** con `{"error":"model_overloaded"}` (el detalle técnico se registra con `console.error`);
+   la app muestra: *"El asistente está saturado en este momento. Intenta nuevamente en unos segundos."*
+   (mismo patrón que el 429). Otros códigos HTTP conservan su manejo anterior (no se ocultan).
+
+### Archivos modificados
+| Archivo | Cambio |
+|---|---|
+| `supabase/functions/gemini-chat/index.ts` | `MODEL` → `gemini-3.8-flash`; helper `callGemini` con reintentos; normalización 429/503 (desplegada como versión 14) |
+| `lib/features/shopping_assistant/shopping_assistant_provider.dart` | Rama `status == 503` en `_describeError` con el mensaje amigable (junto a la de 429) |
+
+Nota: el manejo de errores de la pantalla vive ahora en `shopping_assistant_provider.dart`
+(reestructuración previa del chat: `screen → provider → service`), por eso la corrección de Flutter se
+aplicó ahí, no en la pantalla.
+
+### Código clave (Resumen)
+```ts
+// Edge Function: reintentos y normalización de errores.
+const GEMINI_MAX_ATTEMPTS = 3;
+const GEMINI_RETRY_DELAYS_MS = [0, 1500, 3000];
+// ... callGemini(): reintenta 500/502/503/504 con espera corta; 429 se devuelve igual ...
+// Tras agotar reintentos de 500/502/503/504:
+return json({ error: "model_overloaded" }, 503);
+```
+```dart
+// Provider (Flutter): mensaje amigable para 503.
+if (error.status == 503) {
+  return 'El asistente está saturado en este momento. '
+      'Intenta nuevamente en unos segundos.';
+}
+```
+
+### Por qué se hizo
+El modelo `gemini-2.0-flash` ya no existe en la API (404). Cambiarlo al modelo recomendado por Google
+restaura el servicio; los reintentos reducen la tasa de fallo ante 503/500 transitorios y el mensaje
+amigable evita confundir al usuario con texto técnico en inglés.
+
+### Verificación local
+| Prueba | Resultado |
+|---|---|
+| Sintaxis TS (`npx esbuild`) | OK |
+| `flutter analyze lib/` | **0 issues** |
+| `flutter test` | **10/10 pass** |
+| `supabase functions deploy gemini-chat` | OK → versión **14** activa (prompt reforzado/revocado en la sesión; estado final desplegado como versión **16**) |
+
+### Pruebas reales (Edge Function v14, invocada con la anon key)
+| Prueba | Resultado |
+|---|---|
+| "hola" | **200 OK.** Respuesta normal en español (texto plano). |
+| "¿Dónde me conviene comprar arroz?" | **200 OK.** Precios reales + km por tienda (SVS ₡1.100 5.00 km, S. Ahorro ₡1.175 4.20 km, Buen Día ₡1.300 1.16 km, Mi Súper ₡1.350 0.52 km) y pregunta de transporte. |
+| Bajo límite de cuota (20/min) | **HTTP 429** `{"error":"rate_limit_exceeded"}` → app muestra el mensaje de límite temporal (diseño previo intacto). |
+| Cesta + "en carro" (confirmación final) | No ejecutada en vivo: la cuota 429 (20/min) se agotó durante la sesión de pruebas. La funcionalidad es la misma ya verificada en las Entradas 9 y 11; solo cambió el modelo (200 OK arriba). |
+
+### Aclaración posterior: la opción "Motocicleta" del prompt era correcta
+Al revisar el código a fondo, la Edge Function **sí soporta "moto" de forma completa y consistente**:
+- `SPEED_KMH.moto = 35` (km/h) y `WEIGHTS.moto = { price: 0.6, distance: 0.4 }` (`index.ts:35,43`).
+- `TRANSPORT_LABELS.moto = "Motocicleta"` y `detectTransport` reconoce `moto`/`motocicleta` (`index.ts:51,194`).
+- La lista blanca de transportes del body incluye `"moto"` junto a car/bus/bike/walking (`index.ts:519`).
+
+Por eso la pregunta original de Gemini "(Bus, Carro, Motocicleta, Bicicleta, Caminando)" era **coherente
+con el código**. Durante la sesión se probó un refuerzo del prompt para listar solo 4 opciones (sin moto)
+y se revirtió de inmediato al confirmar el soporte de "moto": el prompt quedó exactamente como estaba
+(desplegado como versión **16**, idéntico en contenido y hash a la versión 14). No hubo cambios de
+comportamiento: solo se evitó una restricción incorrecta.
+
+Sin tablas nuevas, sin Firebase, sin dependencias nuevas. No se modificaron precios, distancias, transporte,
+`manual_lists`, Ubicación ni otras features.
+
+---
+
+## Entrada 13 — "Límite alcanzado" en una sola petición: cuota diaria de 20 y cambio a `gemini-3.5-flash-lite` (2026-10)
+
+### Síntoma reportado
+La app mostraba el mensaje "el asistente alcanzó el límite" apenas se enviaba una petición. Pregunta del
+usuario: ¿por qué se gasta en una sola petición?
+
+### Diagnóstico (429 en vivo con el detalle de Google)
+Se añadió temporalmente el `detail` de Google a la respuesta 429 para leer la métrica exacta:
+
+```
+Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests,
+limit: 20, model: gemini-3.8-flash
+Please retry in 23h56m30s
+```
+
+| Hallazgo | Significado |
+|---|---|
+| `limit: 20`, `model: gemini-3.8-flash` | El tier gratuito de **`gemini-3.8-flash` admite 20 solicitudes por día** (RPD) por proyecto |
+| `Please retry in 23h56m30s` | La cuota se libera a **medianoche (hora del Pacífico)**, no en un minuto |
+| Quién la agotó | **Nuestras propias pruebas de verificación** de las versiones 14–16 de hoy; no una sola petición del usuario |
+
+Es decir: una petición **no** gasta todo el cupo. El cupo diario ya estaba consumido por las pruebas de
+despliegue, y cualquier mensaje de la app dentro de esa ventana devolvía 429.
+
+### Búsqueda de un modelo con cupo mayor
+| Prueba | Resultado |
+|---|---|
+| Cabeceras `x-goog-quota-*` en la respuesta | **No existen** en la API de Gemini (vaciadas; se revirtió el diagnóstico) |
+| `gemini-2.5-flash` | **404**: "no longer available to new users" → recomienda `gemini-3.8-flash` |
+| `gemini-3.5-flash-lite` | **200 OK.** Responde correctamente. Límites publicados 2026: ~**500 solicitudes/día** (frente a 20 de `gemini-3.8-flash`) |
+
+### Cambios realizados
+| Archivo | Cambio |
+|---|---|
+| `supabase/functions/gemini-chat/index.ts` | `MODEL = "gemini-3.5-flash-lite"` (antes `gemini-3.8-flash`); `callGemini` reintenta **429 una sola vez** (+2 s) para absorber picos por minuto (el límite diario no se resuelve reintentando); se conserva `detail` en la respuesta 429 **solo para diagnóstico** (Flutter no lo muestra); se eliminó el diagnóstico temporal de cabeceras. Desplegada como versión **22** |
+
+Reglas de reintento resultantes: 500/502/503/504 → hasta 3 intentos (esperas 0/1,5 s/3 s); **429 → 1
+reintento a los 2 s** y si persiste se devuelve el 429 amigable ya existente en Flutter.
+
+### Por qué se hizo
+El asistente debe responder correctamente. Con `gemini-3.8-flash` (20/día) cualquier uso real más las
+pruebas agotaba el cupo y rompía el chat hasta el día siguiente. `gemini-3.5-flash-lite` mantiene la
+misma API y un cupo diario ~25 veces mayor; es un modelo ligero adecuado para este chat (todo el dato real
+viene de Supabase y el prompt es corto).
+
+### Verificación local
+| Prueba | Resultado |
+|---|---|
+| Sintaxis TS (`npx esbuild`) | OK |
+| `flutter analyze lib/` | **0 issues** |
+| `flutter test` | **10/10 pass** |
+| `supabase functions deploy gemini-chat` | OK → versión **22** activa |
+
+### Pruebas reales (Edge Function v22, con `gemini-3.5-flash-lite`)
+| Prueba | Resultado |
+|---|---|
+| "hola" | **200 OK.** Saludo normal en español. |
+| "¿Dónde me conviene comprar arroz?" | **200 OK.** Precios reales (SVS ₡1.100, S. Ahorro ₡1.175, Buen Día ₡1.300, Mi Súper ₡1.350) y pregunta de transporte. |
+
+### Notas
+- Los límites gratuitos son **por proyecto y por modelo** y Google puede cambiarlos sin aviso; el valor
+  definitivo siempre está en Google AI Studio.
+- Nuestras pruebas en vivo consumen el cupo del usuario: minimizar llamadas de verificación.
+- Para eliminar la restricción de cuota en producción: activar billing (Tier 1) en el proyecto de Google.
+- No se modificaron precios, distancias, lógica de transporte, `manual_lists` ni otras features; Dart quedó
+  intacto en esta entrada.

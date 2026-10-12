@@ -42,6 +42,9 @@ app.*.map.json
 # Environment variables (local secrets)
 .env
 
+# Firebase local cache (generated)
+.firebase/
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile

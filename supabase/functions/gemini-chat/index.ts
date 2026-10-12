@@ -18,7 +18,7 @@
 
 import { createClient } from "npm:@supabase/supabase-js";
 
-const MODEL = "gemini-3.5-flash";
+const MODEL = "gemini-3.5-flash-lite";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
@@ -399,6 +399,83 @@ async function querySupermarkets(
   return byId;
 }
 
+// Número máximo de intentos y espera (ms) entre reintentos cuando Gemini
+// devuelve errores transitorios de servidor (HTTP 500, 502, 503, 504).
+const GEMINI_MAX_ATTEMPTS = 3;
+const GEMINI_RETRY_DELAYS_MS = [0, 1500, 3000];
+
+// Resultado normalizado de una llamada a Gemini: texto generado o error con
+// status HTTP y detalle técnico (para logs; nunca se envía crudo a Flutter).
+interface GeminiResult {
+  ok: boolean;
+  text?: string;
+  status?: number;
+  detail?: string;
+}
+
+// Llama a Gemini con reintentos (espera corta) cuando el proveedor devuelve
+// 500/502/503/504 (sobrecarga o fallo transitorio). HTTP 429 se reintenta UNA
+// sola vez tras 2 s: si el límite es por minuto, la ventana se libera en
+// segundos; si es diario, no conviene gastar más cupo reintentando.
+async function callGemini(
+  apiKey: string,
+  contents: { role: string; parts: { text: string }[] }[],
+): Promise<GeminiResult> {
+  let lastStatus = 0;
+  let lastDetail = "";
+  for (let attempt = 0; attempt < GEMINI_MAX_ATTEMPTS; attempt++) {
+    if (attempt > 0) {
+      const delay =
+        lastStatus === 429 ? 2000 : (GEMINI_RETRY_DELAYS_MS[attempt] ?? 0);
+      if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+
+    let status = 0;
+    let detail = "";
+    try {
+      const res = await fetch(GEMINI_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents,
+          generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
+        }),
+      });
+      status = res.status;
+      if (res.ok) {
+        const data = await res.json().catch(() => null) as
+          | { candidates?: { content?: { parts?: { text?: string }[] }[] }[] }
+          | null;
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) return { ok: true, text };
+        status = 502;
+        detail = "Gemini devolvió una respuesta vacía";
+      } else {
+        const errBody = await res.json().catch(() => null) as
+          | { error?: { message?: string } }
+          | null;
+        detail = errBody?.error?.message ?? "";
+      }
+    } catch (err) {
+      status = 500;
+      detail = err instanceof Error ? err.message : String(err);
+    }
+
+    lastStatus = status;
+    lastDetail = detail;
+    const transient =
+      status === 500 || status === 502 || status === 503 || status === 504;
+    const rateLimited = status === 429;
+    const canRetry = transient || (rateLimited && attempt === 0);
+    if (!canRetry) return { ok: false, status, detail };
+  }
+  return { ok: false, status: lastStatus, detail: lastDetail };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -500,45 +577,36 @@ Deno.serve(async (req) => {
     });
   }
 
-  const geminiRes = await fetch(GEMINI_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-goog-api-key": apiKey,
-    },
-    body: JSON.stringify({
-      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-      contents,
-      generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
-    }),
-  });
+  const gemini = await callGemini(apiKey, contents);
 
-  if (!geminiRes.ok) {
-    let detail = "";
-    try {
-      const errBody = await geminiRes.json();
-      detail = errBody?.error?.message ?? "";
-    } catch {
-      detail = "";
+  if (!gemini.ok) {
+    const status = gemini.status ?? 502;
+    const detail = gemini.detail ?? "";
+    // Límite de solicitudes de Gemini (HTTP 429) tras el reintento: se devuelve
+    // un código claro para que Flutter muestre un mensaje sencillo. El detalle
+    // (métrica, límite, cuándo se libera) queda en `detail` solo para
+    // diagnóstico técnico: Flutter no lo muestra al usuario.
+    if (status === 429) {
+      console.error(`Gemini 429 (límite de solicitudes): ${detail}`);
+      return json(
+        { error: "rate_limit_exceeded", detail: detail.slice(0, 700) },
+        429,
+      );
     }
-    // Límite temporal de solicitudes de Gemini (HTTP 429): se devuelve un
-    // código claro para que Flutter muestre un mensaje sencillo; el detalle
-    // técnico queda en los logs de la Edge Function.
-    if (geminiRes.status === 429) {
-      console.error(`Gemini 429 (límite temporal de solicitudes): ${detail}`);
-      return json({ error: "rate_limit_exceeded" }, 429);
+    // Tras los reintentos, los errores transitorios de servidor/sobrecarga
+    // (500, 502, 503, 504) se traducen a un mensaje sencillo; el detalle
+    // técnico se registra en los logs.
+    if (status === 500 || status === 502 || status === 503 || status === 504) {
+      console.error(
+        `Gemini ${status} tras ${GEMINI_MAX_ATTEMPTS} intentos: ${detail}`,
+      );
+      return json({ error: "model_overloaded" }, 503);
     }
     const msg = detail ? `: ${detail.slice(0, 400)}` : "";
-    return json({ error: `Gemini respondió ${geminiRes.status}${msg}` }, 502);
+    return json({ error: `Gemini respondió ${status}${msg}` }, 502);
   }
 
-  const data = await geminiRes.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) {
-    return json({ error: "Gemini devolvió una respuesta vacía" }, 502);
-  }
-
-  return json({ response: text }, 200);
+  return json({ response: gemini.text }, 200);
 });
 
 function json(body: unknown, status: number): Response {

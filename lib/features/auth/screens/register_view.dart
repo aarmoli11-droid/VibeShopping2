@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import 'package:vibeshopping/core/vibe_constants.dart';
 import 'package:vibeshopping/features/auth/helpers/auth_styles.dart';
 import 'package:vibeshopping/features/auth/widgets/auth_wave_header.dart';
-import 'package:vibeshopping/features/explorer/screens/explorer_shell.dart';
 import '../providers/auth_provider.dart';
 
 class RegisterView extends StatefulWidget {
@@ -56,16 +55,7 @@ class _RegisterViewState extends State<RegisterView> {
           password,
           displayName: _nameController.text.trim(),
         );
-
-    // En caso de éxito reemplaza el registro por el explorador. Si hay error,
-    // el mensaje se muestra en línea y el formulario conserva sus datos.
-    final auth = context.read<AuthProvider>();
-    if (auth.isLoggedIn && mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const ExplorerShell()),
-      );
-    }
+    // AuthGate resuelve la navegación al explorador cuando isLoggedIn cambia.
   }
 
   @override
@@ -168,32 +158,7 @@ class _RegisterViewState extends State<RegisterView> {
                   const SizedBox(height: 26),
                   if (auth.error != null) ...[
                     const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFCE4EC),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(Icons.error_outline,
-                              size: 20, color: Color(0xFFC62828)),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              auth.error!,
-                              style: const TextStyle(
-                                color: Color(0xFFC62828),
-                                fontSize: 13.5,
-                                height: 1.3,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    AuthErrorBanner(message: auth.error!),
                   ],
                   FilledButton(
                     onPressed: auth.isLoading ? null : () => _submit(),

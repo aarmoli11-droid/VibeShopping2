@@ -1,13 +1,8 @@
-// Asistente de compras conversacional: chat con la Edge Function gemini-chat.
-// La Edge Function consulta Supabase, calcula precios + distancia + transporte
-// y arma el contexto; Gemini solo redacta con esos datos reales.
-// El transporte se resuelve dentro de la conversación (la Edge Function lo
-// detecta en los mensajes y pregunta si falta); no depende de chips.
-
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/vibe_constants.dart';
+import 'shopping_assistant_provider.dart';
 
 class ShoppingAssistantScreen extends StatefulWidget {
   const ShoppingAssistantScreen({super.key});
@@ -21,13 +16,6 @@ class _ShoppingAssistantScreenState extends State<ShoppingAssistantScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scroll = ScrollController();
 
-  final List<_Message> _messages = [
-    _Message(
-        text:
-            'Pregúntame sobre tus compras y te ayudaré a elegir la mejor opción.'),
-  ];
-  bool _loading = false;
-
   @override
   void dispose() {
     _controller.dispose();
@@ -35,44 +23,11 @@ class _ShoppingAssistantScreenState extends State<ShoppingAssistantScreen> {
     super.dispose();
   }
 
-  Future<void> _send() async {
+  void _send() {
     final text = _controller.text.trim();
-    if (text.isEmpty || _loading) return;
-
-    setState(() {
-      _messages.add(_Message(text: text, isUser: true));
-      _loading = true;
-    });
+    if (text.isEmpty) return;
     _controller.clear();
-    _scrollToBottom();
-
-    // Historial completo de la conversación (sin mensajes de error).
-    final history = _messages
-        .where((m) => !m.isError)
-        .map((m) => {
-              'role': m.isUser ? 'user' : 'assistant',
-              'text': m.text,
-            })
-        .toList();
-
-    try {
-      final res =
-          await Supabase.instance.client.functions.invoke('gemini-chat', body: {
-        'messages': history,
-      });
-      final data = res.data as Map<String, dynamic>;
-      setState(() {
-        _messages.add(_Message(
-          text: data['response'] as String? ?? 'Sin respuesta.',
-        ));
-        _loading = false;
-      });
-    } catch (e) {
-      setState(() {
-        _messages.add(_Message(text: _describeError(e), isError: true));
-        _loading = false;
-      });
-    }
+    context.read<ShoppingAssistantProvider>().sendMessage(text);
     _scrollToBottom();
   }
 
@@ -83,23 +38,17 @@ class _ShoppingAssistantScreenState extends State<ShoppingAssistantScreen> {
     });
   }
 
-  String _describeError(Object error) {
-    if (error is FunctionException) {
-      if (error.status == 429) {
-        return 'En este momento el asistente alcanzó el límite temporal de consultas. '
-            'Intenta nuevamente en unos segundos.';
-      }
-      final details = error.details;
-      if (details is Map && details['error'] is String) {
-        return details['error'] as String;
-      }
-      return 'Error ${error.status} · ${error.reasonPhrase}';
-    }
-    return 'No se pudo conectar con el asistente.';
-  }
-
   @override
   Widget build(BuildContext context) {
+    final assistant = context.watch<ShoppingAssistantProvider>();
+
+    // Auto-scroll when messages change.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      }
+    });
+
     return Scaffold(
       backgroundColor: VibeColors.backgroundWhite,
       appBar: AppBar(title: const Text('VibeShopping Assistant')),
@@ -110,8 +59,8 @@ class _ShoppingAssistantScreenState extends State<ShoppingAssistantScreen> {
               controller: _scroll,
               padding: const EdgeInsets.all(16),
               children: [
-                for (final message in _messages) _bubble(message),
-                if (_loading)
+                for (final message in assistant.messages) _bubble(message),
+                if (assistant.isLoading)
                   const Align(
                     alignment: Alignment.centerLeft,
                     child: Padding(
@@ -127,13 +76,13 @@ class _ShoppingAssistantScreenState extends State<ShoppingAssistantScreen> {
               ],
             ),
           ),
-          _buildInput(),
+          _buildInput(assistant.isLoading),
         ],
       ),
     );
   }
 
-  Widget _buildInput() {
+  Widget _buildInput(bool isLoading) {
     return SafeArea(
       top: false,
       child: Padding(
@@ -151,7 +100,7 @@ class _ShoppingAssistantScreenState extends State<ShoppingAssistantScreen> {
             ),
             const SizedBox(width: 8),
             IconButton.filled(
-              onPressed: _loading ? null : _send,
+              onPressed: isLoading ? null : _send,
               style: IconButton.styleFrom(
                 backgroundColor: VibeColors.navy,
                 foregroundColor: Colors.white,
@@ -168,11 +117,11 @@ class _ShoppingAssistantScreenState extends State<ShoppingAssistantScreen> {
     );
   }
 
-  Widget _bubble(_Message message) {
+  Widget _bubble(ShoppingAssistantMessage message) {
     final background = message.isUser
         ? VibeColors.navy
         : message.isError
-            ? const Color(0xFFFCE4EC)
+            ? VibeColors.errorBackground
             : VibeColors.backgroundMint;
 
     return Align(
@@ -199,13 +148,4 @@ class _ShoppingAssistantScreenState extends State<ShoppingAssistantScreen> {
       ),
     );
   }
-}
-
-class _Message {
-  final String text;
-  final bool isUser;
-  final bool isError;
-
-  const _Message(
-      {required this.text, this.isUser = false, this.isError = false});
 }

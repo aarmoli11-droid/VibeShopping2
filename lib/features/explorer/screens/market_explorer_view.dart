@@ -12,7 +12,7 @@ import '../widgets/vibe_search_bar.dart';
 import '../widgets/vibe_category_bar.dart';
 import '../widgets/vibe_selection_modals.dart';
 import '../widgets/store_filter_selector.dart';
-import '../widgets/loading_indicator.dart';
+import '../widgets/shimmer_loading.dart';
 import '../widgets/empty_product_state.dart';
 
 class MarketExplorerView extends StatefulWidget {
@@ -131,7 +131,7 @@ class _MarketExplorerViewState extends State<MarketExplorerView> {
           ),
           SliverToBoxAdapter(
             child: isLoading
-                ? const LoadingIndicator()
+                ? const ShimmerLoading()
                 : _buildProductContent(provider),
           ),
         ],
