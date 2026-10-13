@@ -1,12 +1,15 @@
 {
+    "id": "/",
     "name": "VibeShopping",
     "short_name": "VibeShopping",
+    "lang": "es-CR",
     "start_url": ".",
+    "scope": "/",
     "display": "standalone",
     "background_color": "#E0F2F1",
     "theme_color": "#2C3E50",
     "description": "Explora productos y compara precios en supermercados de Costa Rica.",
-    "orientation": "portrait-primary",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {
