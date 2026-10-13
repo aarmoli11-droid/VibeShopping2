@@ -19,6 +19,8 @@ class AddToListSheet extends StatelessWidget {
   ) {
     return showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
       showDragHandle: true,
       backgroundColor: VibeColors.backgroundWhite,
       shape: const RoundedRectangleBorder(
@@ -33,66 +35,81 @@ class AddToListSheet extends StatelessWidget {
     final provider = context.watch<ManualListProvider>();
     final lists = provider.lists;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'Agregar a una lista',
-            style: TextStyle(
-              fontSize: 17,
-              fontWeight: FontWeight.w600,
-              color: VibeColors.navy,
-            ),
-          ),
-          const SizedBox(height: 16),
-          if (lists.isEmpty)
-            _EmptyListsView(product: product)
-          else
-            ...lists.map((list) => _ListTile(
-                  list: list,
-                  onTap: () async {
-                    await provider.addItemToList(list.id, product);
-                    if (context.mounted) {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Producto agregado correctamente.'),
-                          backgroundColor: Colors.green,
-                        ),
-                      );
-                    }
-                  },
-                )),
-          const SizedBox(height: 8),
-          const Divider(),
-          TextButton.icon(
-            onPressed: () async {
-              Navigator.pop(context);
-              if (!context.mounted) return;
-              final list = await ListCreationSheet.show(
-                context,
-                prefillProduct: product,
-              );
-              if (list != null && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Producto agregado correctamente.'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              }
-            },
-            icon: const Icon(Icons.add_circle_outline, color: VibeColors.mint),
-            label: const Text(
-              'Crear nueva lista',
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Agregar a una lista',
               style: TextStyle(
-                  color: VibeColors.mint, fontWeight: FontWeight.w600),
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: VibeColors.navy,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 16),
+            if (lists.isEmpty)
+              _EmptyListsView(product: product)
+            else
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: lists
+                        .map((list) => _ListTile(
+                              list: list,
+                              onTap: () async {
+                                await provider.addItemToList(list.id, product);
+                                if (context.mounted) {
+                                  Navigator.pop(context);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                          'Producto agregado correctamente.'),
+                                      backgroundColor: Colors.green,
+                                    ),
+                                  );
+                                }
+                              },
+                            ))
+                        .toList(),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 8),
+            const Divider(),
+            TextButton.icon(
+              onPressed: () async {
+                Navigator.pop(context);
+                if (!context.mounted) return;
+                final list = await ListCreationSheet.show(
+                  context,
+                  prefillProduct: product,
+                );
+                if (list != null && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Producto agregado correctamente.'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              },
+              icon:
+                  const Icon(Icons.add_circle_outline, color: VibeColors.mint),
+              label: const Text(
+                'Crear nueva lista',
+                style: TextStyle(
+                    color: VibeColors.mint, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

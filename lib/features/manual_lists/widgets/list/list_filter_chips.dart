@@ -25,28 +25,27 @@ class ListFilterChips extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               _buildChip('Todas', ListFilterMode.all, currentFilter),
-              const SizedBox(width: 8),
               _buildChip('Vacías', ListFilterMode.empty, currentFilter),
-              const SizedBox(width: 8),
               _buildChip(
                   'Con productos', ListFilterMode.hasProducts, currentFilter),
             ],
           ),
           const SizedBox(height: 8),
-          Row(
+          Wrap(
+            spacing: 6,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               const Text('Orden:',
                   style: TextStyle(fontSize: 12, color: Colors.grey)),
-              const SizedBox(width: 8),
               _buildSortChip('Nombre', ListSortMode.name),
-              const SizedBox(width: 6),
               _buildSortChip('Actualizado', ListSortMode.updatedAt),
-              const SizedBox(width: 6),
               _buildSortChip('Total', ListSortMode.totalPrice),
-              const SizedBox(width: 6),
               GestureDetector(
                 onTap: () => onSortChanged(currentSort, !sortAscending),
                 child: Icon(

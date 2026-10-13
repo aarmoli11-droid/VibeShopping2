@@ -8,6 +8,7 @@ import '../../manual_lists/models/manual_list_entity.dart';
 import '../../manual_lists/widgets/add_to_list_sheet.dart';
 import 'vibe_image_slider.dart';
 import '../../../core/vibe_constants.dart';
+import '../../../core/vibe_formatter.dart';
 
 class VibeProductCard extends StatelessWidget {
   const VibeProductCard({
@@ -203,7 +204,7 @@ class _PriceComparison extends StatelessWidget {
           ),
           const SizedBox(width: 4),
           Text(
-            '\$${preview.bestPrice.toStringAsFixed(0)}',
+            VibeFormatter.formatPrice(preview.bestPrice),
             style: const TextStyle(
               fontSize: 9,
               color: Colors.green,
@@ -213,7 +214,7 @@ class _PriceComparison extends StatelessWidget {
           if (preview.savings > 0) ...[
             const SizedBox(width: 3),
             Text(
-              '-${preview.savings.toStringAsFixed(0)}',
+              '-${VibeFormatter.formatPrice(preview.savings)}',
               style: TextStyle(
                 fontSize: 8,
                 color: Colors.green[700],
