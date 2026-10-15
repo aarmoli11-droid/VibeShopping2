@@ -1,6 +1,7 @@
 // Edge Function `gemini-chat`:
 // Flutter → Edge Function → Supabase (v_products_complete + supermarkets)
-// → cálculo de distancias (Haversine) y puntaje multicriterio → Gemini redacta → Flutter.
+// → cálculo de distancias (Haversine) y puntaje multicriterio con la ubicación
+//   ACTUAL del usuario (enviada desde Flutter) → Gemini redacta → Flutter.
 //
 // Conversacional: recibe el historial de la conversación (messages[]) y detecta
 // el medio de transporte en cualquier turno del usuario (sin depender de chips).
@@ -8,7 +9,10 @@
 // Gemini pregunta el transporte antes de recomendar.
 //
 // Los precios vienen de la vista `v_products_complete` y las coordenadas de la
-// tabla `supermarkets` (la vista NO expone latitud/longitud).
+// tabla `supermarkets` (la vista NO expone latitud/longitud). La ubicación del
+// usuario NO se fija en el servidor: llega en el cuerpo (latitude/longitude)
+// desde Flutter (LocationProvider). Sin ella se omiten distancias, tiempos y
+// recomendación, y Gemini solo presenta precios.
 //
 // Seguridad:
 //   - GEMINI_API_KEY vive como secret de Supabase (Deno.env.get), nunca en Flutter.
@@ -21,11 +25,6 @@ import { createClient } from "npm:@supabase/supabase-js";
 const MODEL = "gemini-3.5-flash-lite";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-
-// Posición fija de referencia del usuario (centro de San Isidro), la misma
-// que usa LocationDemoData en Flutter. En una versión real se usaría GPS.
-const USER_LATITUDE = 9.376;
-const USER_LONGITUDE = -83.7025;
 
 // Velocidades (km/h) y pesos precio/distancia por transporte, igual que
 // ShoppingAssistantLogic (Dart).
@@ -138,13 +137,25 @@ interface CatalogRow {
   supermarket_name: string | null;
 }
 
-// Fila de la tabla `supermarkets` (coordenadas reales por supermercado).
+// Fila de la tabla `supermarkets` (coordenadas reales por sucursal).
 interface SupermarketRow {
   id: string;
   name: string | null;
+  branch_name: string | null;
   latitude: number | null;
   longitude: number | null;
   address: string | null;
+}
+
+// Nombre visible de la sucursal: cadena + localidad, para distinguir dos
+// locales de la misma cadena (p. ej. "BM · Buenos Aires").
+function displayStoreName(supermarket: SupermarketRow | undefined): string | null {
+  if (!supermarket?.name) return null;
+  const branch = supermarket.branch_name?.trim();
+  if (branch && !supermarket.name.includes(branch)) {
+    return `${supermarket.name} · ${branch}`;
+  }
+  return supermarket.name;
 }
 
 interface StoreOffer {
@@ -208,6 +219,17 @@ function extractKeywordsFromMessages(
   return [...unique].slice(0, 4);
 }
 
+// Coordenada válida recibida desde Flutter; null si falta o está fuera de rango.
+function toLatitude(value: unknown): number | null {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) && n >= -90 && n <= 90 ? n : null;
+}
+
+function toLongitude(value: unknown): number | null {
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) && n >= -180 && n <= 180 ? n : null;
+}
+
 // Distancia en línea recta entre dos coordenadas (Haversine).
 function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const earthRadiusKm = 6371.0;
@@ -237,11 +259,15 @@ function formatColones(value: number): string {
 // puntaje multicriterio (igual que ShoppingAssistantLogic.buildBasketRecommendation):
 // score = pesoPrecio*(másBarato/total) + pesoDistancia*(másCerca/distancia), solo
 // para tiendas que tienen TODOS los productos de la consulta.
-// Las coordenadas de cada tienda vienen de la tabla `supermarkets`.
+// Las coordenadas de cada sucursal vienen de la tabla `supermarkets` y la del
+// usuario llega desde Flutter (userLatitude/userLongitude). Sin ubicación del
+// usuario no hay distancias ni puntuación.
 function buildOffers(
   rows: CatalogRow[],
   supermarkets: Map<string, SupermarketRow>,
   transport: string | null,
+  userLatitude: number | null,
+  userLongitude: number | null,
 ): StoreOffer[] {
   const basketSize = new Set(
     rows.map((r) => r.canonical_name).filter((n): n is string => !!n),
@@ -263,7 +289,8 @@ function buildOffers(
       const supermarket = supermarkets.get(row.supermarket_id);
       offer = {
         storeId: row.supermarket_id,
-        storeName: row.supermarket_name ?? "Desconocida",
+        storeName: displayStoreName(supermarket) ??
+          row.supermarket_name ?? "Desconocida",
         address: supermarket?.address ?? null,
         latitude: supermarket?.latitude ?? null,
         longitude: supermarket?.longitude ?? null,
@@ -281,10 +308,13 @@ function buildOffers(
     offer.coverage += 1;
   }
 
+  // La distancia solo existe si hay ubicación REAL del usuario Y coordenadas
+  // de la sucursal (ambas procedentes de Flutter/Supabase).
   for (const offer of byStore.values()) {
-    if (offer.latitude != null && offer.longitude != null) {
+    if (userLatitude != null && userLongitude != null &&
+      offer.latitude != null && offer.longitude != null) {
       offer.distanceKm = haversineKm(
-        USER_LATITUDE, USER_LONGITUDE, offer.latitude, offer.longitude,
+        userLatitude, userLongitude, offer.latitude, offer.longitude,
       );
       // Sin transporte no hay tiempo de traslado ni puntuación.
       if (transport != null) {
@@ -390,7 +420,7 @@ async function querySupermarkets(
 ): Promise<Map<string, SupermarketRow>> {
   const { data, error } = await supabase
     .from("supermarkets")
-    .select("id,name,latitude,longitude,address");
+    .select("id,name,branch_name,latitude,longitude,address");
   if (error) throw error;
   const byId = new Map<string, SupermarketRow>();
   for (const row of (data ?? []) as SupermarketRow[]) {
@@ -529,6 +559,11 @@ Deno.serve(async (req) => {
     : null;
   const transport = detectTransport(messages) ?? bodyTransport;
 
+  // Ubicación actual del usuario (GPS enviado desde Flutter). Si falta, el
+  // asistente responde con precios pero sin distancias, tiempos ni recomendación.
+  const userLatitude = toLatitude(body?.latitude);
+  const userLongitude = toLongitude(body?.longitude);
+
   let dataPart = "";
   const keywords = extractKeywordsFromMessages(messages);
   if (keywords.length > 0) {
@@ -545,7 +580,13 @@ Deno.serve(async (req) => {
         querySupermarkets(supabase),
       ]);
       if (rows.length > 0) {
-        const offers = buildOffers(rows, supermarkets, transport);
+        const offers = buildOffers(
+          rows,
+          supermarkets,
+          transport,
+          userLatitude,
+          userLongitude,
+        );
         if (offers.length > 0) {
           dataPart = `\n\n${buildContext(offers, transport)}`;
         }

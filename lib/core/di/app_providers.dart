@@ -84,6 +84,7 @@ class AppProviders {
         ChangeNotifierProvider(
           create: (_) => ShoppingAssistantProvider(
             service: _.read<ShoppingAssistantService>(),
+            locationProvider: _.read<LocationProvider>(),
           ),
         ),
       ];

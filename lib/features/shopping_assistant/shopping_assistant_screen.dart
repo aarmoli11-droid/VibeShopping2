@@ -17,6 +17,15 @@ class _ShoppingAssistantScreenState extends State<ShoppingAssistantScreen> {
   final ScrollController _scroll = ScrollController();
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<ShoppingAssistantProvider>().prepareLocation();
+    });
+  }
+
+  @override
   void dispose() {
     _controller.dispose();
     _scroll.dispose();

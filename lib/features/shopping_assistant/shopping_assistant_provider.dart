@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show FunctionException;
 
+import '../../core/location/location_provider.dart';
 import 'shopping_assistant_service.dart';
 
 class ShoppingAssistantMessage {
@@ -18,10 +19,17 @@ class ShoppingAssistantMessage {
 }
 
 class ShoppingAssistantProvider extends ChangeNotifier {
-  ShoppingAssistantProvider({required ShoppingAssistantService service})
-      : _service = service;
+  ShoppingAssistantProvider({
+    required ShoppingAssistantService service,
+    LocationProvider? locationProvider,
+  })  : _service = service,
+        _locationProvider = locationProvider;
 
   final ShoppingAssistantService _service;
+
+  // Fuente única de la ubicación (GPS). Opcional: sin ella el asistente sigue
+  // funcionando, pero sin distancias ni recomendación por cercanía.
+  final LocationProvider? _locationProvider;
 
   final List<ShoppingAssistantMessage> _messages = [
     const ShoppingAssistantMessage(
@@ -33,12 +41,29 @@ class ShoppingAssistantProvider extends ChangeNotifier {
   List<ShoppingAssistantMessage> get messages => _messages;
   bool get isLoading => _isLoading;
 
+  // Prepara la ubicación al abrir el asistente, sin pedir permiso: si ya se
+  // concedió (por ejemplo desde el mapa), obtiene la posición actual. Si no,
+  // el asistente responderá sin distancias hasta que el permiso exista.
+  Future<void> prepareLocation() async {
+    final location = _locationProvider;
+    if (location == null) return;
+    if (location.status == LocationStatus.initial) {
+      await location.initialize();
+    }
+    if (location.isGranted && !location.hasPosition) {
+      await location.refreshPosition();
+    }
+  }
+
   Future<void> sendMessage(String text) async {
     if (text.trim().isEmpty || _isLoading) return;
 
     _messages.add(ShoppingAssistantMessage(text: text, isUser: true));
     _isLoading = true;
     notifyListeners();
+
+    // Asegura coordenadas actuales antes de calcular distancias en el servidor.
+    await prepareLocation();
 
     final history = _messages
         .where((m) => !m.isError)
@@ -49,7 +74,11 @@ class ShoppingAssistantProvider extends ChangeNotifier {
         .toList();
 
     try {
-      final response = await _service.sendMessage(history);
+      final response = await _service.sendMessage(
+        history,
+        latitude: _locationProvider?.latitude,
+        longitude: _locationProvider?.longitude,
+      );
       _messages.add(ShoppingAssistantMessage(text: response));
     } catch (e) {
       _messages.add(ShoppingAssistantMessage(
